@@ -1,0 +1,35 @@
+{
+  "_comment": "KeyMapr config — copy to ~/.config/keymaprd/config.json and edit. Run 'keymaprd --dump' to find your button numbers.",
+
+  "_buttons": {
+    "btn0": "left mouse button",
+    "btn1": "right mouse button",
+    "btn2": "middle click / scroll wheel click",
+    "btn3": "first extra button (thumb back on MX Master)",
+    "btn4": "second extra button (thumb forward on MX Master)",
+    "btn5+": "additional extra buttons — use --dump to discover"
+  },
+
+  "_supported_modifiers": ["cmd", "shift", "opt", "ctrl"],
+
+  "_supported_keys": {
+    "letters":  "a b c d e f g h i j k l m n o p q r s t u v w x y z",
+    "numbers":  "0 1 2 3 4 5 6 7 8 9",
+    "arrows":   "left  right  up  down",
+    "special":  "space  return  tab  escape  delete  backspace",
+    "function": "f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12",
+    "symbols":  "- = [ ] \\ ; ' , . /"
+  },
+
+  "_named_actions": {
+    "mission_control": "opens Mission Control (mapped to F3 by default)",
+    "launchpad":       "opens Launchpad      (mapped to F4 by default)",
+    "spotlight":       "opens Spotlight      (cmd+space)",
+    "screenshot":      "takes a screenshot   (cmd+shift+3)"
+  },
+
+  "buttons": {
+    "btn3": "cmd+left",
+    "btn4": "cmd+right"
+  }
+}
