@@ -1,0 +1,47 @@
+name: Release
+
+# Triggers on a pushed version tag like v0.1.0
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write   # needed to create GitHub Releases and upload assets
+
+jobs:
+  build:
+    name: Build macOS binary
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod   # reads the Go version from go.mod automatically
+
+      - name: Build binary
+        # CGO_ENABLED=1 is required because we use CGo (CoreGraphics, IOKit).
+        # GOOS/GOARCH are explicit for clarity — macos-latest runners are arm64.
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+            go build -ldflags="-s -w" -o keymaprd_darwin_arm64 ./cmd/keymaprd/
+
+      - name: Build binary (Intel / amd64)
+        # Cross-compile for older Intel Macs.
+        # Note: CGo cross-compilation requires the macOS SDK — macos-latest has it.
+        run: |
+          CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+            go build -ldflags="-s -w" -o keymaprd_darwin_amd64 ./cmd/keymaprd/
+
+      - name: Create GitHub Release and upload binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            keymaprd_darwin_arm64
+            keymaprd_darwin_amd64
+            config.example.json
+          generate_release_notes: true

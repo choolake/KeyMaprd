@@ -18,12 +18,24 @@ import (
 const version = "0.1.0"
 
 func main() {
+	// Handle subcommands before flag parsing — subcommands have no flags of their own.
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "install":
+			runInstall()
+			return
+		case "uninstall":
+			runUninstall()
+			return
+		}
+	}
+
 	// --- CLI flags ---
 	var (
 		flagVersion     = flag.Bool("version", false, "Print version and exit")
 		flagListDevices = flag.Bool("list-devices", false, "List all connected HID devices and exit")
 		flagDump        = flag.Bool("dump", false, "Print all mouse button events (use this to discover button numbers for config.json)")
-		flagConfig = flag.String("config", "", "Path to config.json (default: ~/.config/keymaprd/config.json)")
+		flagConfig      = flag.String("config", "", "Path to config.json (default: ~/.config/keymaprd/config.json)")
 	)
 	flag.Parse()
 

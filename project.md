@@ -30,8 +30,8 @@ An open-source macOS tool that reads Logitech MX Master mouse buttons and remaps
 - **Build constraint:** `CGO_ENABLED=1`, macOS only
 
 ### HID Reading
-- **Library:** `github.com/sstallion/go-hid` — used for **device enumeration only** (`--list-devices`)
-  - Requires `hidapi` as a system dependency (`brew install hidapi`)
+- **Library:** Native CGo IOKit (`IOHIDManagerCreate` / `IOHIDManagerCopyDevices`) for device enumeration (`--list-devices`)
+  - No external library or `brew install hidapi` needed — uses macOS built-in IOKit framework directly
 - **Button event capture:** `CGEventTap` (see below) — *not* raw HID device open
   - macOS Ventura/Sonoma blocks raw HID opens on Bluetooth mice (`0xE00002C1 privilege violation`)
   - Raw HID open approach was attempted and abandoned in favour of CGEventTap
@@ -78,7 +78,17 @@ An open-source macOS tool that reads Logitech MX Master mouse buttons and remaps
 | Behaves like real keyboard | ❌ | ✅ |
 | Needs root? | No | No (Accessibility permission sufficient) |
 
-  `kCGHIDEventTap` makes the injected event indistinguishable from a real physical keypress — required for system-level shortcuts like `Ctrl+Left` (switch spaces) to fire correctly.
+  `kCGHIDEventTap` makes the injected event indistinguishable from a real physical keypress — required for system-level shortcuts like `Cmd+Space` (Spotlight) to fire correctly.
+
+- **`ctrl+left` / `ctrl+right` space-switching exception:**
+  - `CGEventPost` **cannot** trigger Dock space-switching on macOS Ventura/Sonoma, even at `kCGHIDEventTap` and even as root — the Dock verifies event origin and rejects synthetic ctrl events
+  - Fix: detect `ctrl+left` / `ctrl+right` in `Press()` and shell out to `osascript`:
+    ```
+    osascript -e 'tell application "System Events" to key code 123 using {control down}'
+    ```
+  - This goes through the Accessibility API which the Dock trusts
+  - All other combos still use the fast CGEventPost path
+  - ~100-200ms latency is acceptable for space-switching
 
 - **Navigation key flag (`kCGEventFlagMaskNumericPad` = `0x00200000`):**
   - Arrow keys (`left`, `right`, `up`, `down`) and navigation keys (`delete`, `return`) **must** have this flag set
@@ -99,34 +109,39 @@ An open-source macOS tool that reads Logitech MX Master mouse buttons and remaps
 ### Distribution (Homebrew)
 - Repository: `github.com/choolake/homebrew-keymaprd` (Homebrew tap)
 - Go module: `github.com/choolake/keymaprd`
-- Formula declares `depends_on "hidapi"` and `depends_on "go" => :build`
+- Formula declares `depends_on "go" => :build` (no `hidapi` needed — IOKit is built into macOS)
 - Pre-built bottles via GitHub Actions (avoids requiring users to have Go installed)
 - Install: `brew tap choolake/keymaprd && brew install keymaprd`
 
 ---
 
-## Project Structure
+### Project Structure
 
 ```
 KeyMapr/
 ├── cmd/
 │   └── keymaprd/
-│       └── main.go              # Entry point: --dump, --list-devices, --config, start
+│       ├── main.go              # Entry point: --dump, --list-devices, --config, install, uninstall, start
+│       └── launchd.go           # install/uninstall subcommands — writes LaunchAgent plist
 ├── internal/
 │   ├── hid/
-│   │   └── reader.go            # Device enumeration only (go-hid, --list-devices)
+│   │   └── reader.go            # Device enumeration (native IOKit CGo, --list-devices)
 │   ├── eventtap/
 │   │   └── tap.go               # CGEventTap: mouse button capture (CGo + CoreGraphics)
 │   ├── mapper/
 │   │   ├── config.go            # Config struct + JSON loader
-│   │   └── mapper.go            # Button number → action lookup
+│   │   ├── mapper.go            # Button number → action lookup
+│   │   └── watcher.go           # fsnotify hot-reload wrapper
 │   └── inject/
-│       └── keyboard.go          # CGo CoreGraphics event injection (CGEventPost)
+│       └── keyboard.go          # CGo CoreGraphics event injection (CGEventPost + osascript)
 ├── config.example.json          # Example mapping: { "buttons": { "btn3": "cmd+space" } }
 ├── go.mod                       # Module: github.com/choolake/keymaprd
 ├── go.sum
 ├── Formula/
-│   └── keymaprd.rb              # Homebrew formula (Sprint 2)
+│   └── keymaprd.rb              # Homebrew formula
+├── .github/
+│   └── workflows/
+│       └── release.yml          # GitHub Actions: build arm64 + amd64 binaries on tag push
 └── project.md                   # This file — living document
 ```
 
@@ -178,14 +193,18 @@ Concepts this project will teach, in order of encounter:
 ### Sprint 2 — Daemon & Distribution (In Progress)
 - [x] `--config` falls back to default path when no value is provided
 - [x] Comprehensive `config.example.json` — all keys, modifiers, named actions documented
-- [ ] Replace `go-hid` with native CGo IOKit enumeration for `--list-devices`
-      — removes `github.com/sstallion/go-hid` and `brew install hidapi` dependency entirely
-      — use `IOHIDManagerCreate` + `IOHIDManagerCopyDevices` directly in C
-- [ ] launchd plist + install/uninstall commands
-- [ ] Homebrew tap + formula
-- [ ] Bundle a default `config.json` in the Homebrew installation (works out of the box)
-- [x] Config hot-reload with `fsnotify` (`internal/mapper/watcher.go`)
-- [ ] Pre-built GitHub Actions bottles
+- [x] Replace `go-hid` with native CGo IOKit enumeration for `--list-devices`
+      — removed `github.com/sstallion/go-hid` and `brew install hidapi` dependency entirely
+      — uses `IOHIDManagerCreate` + `IOHIDManagerCopyDevices` directly in C
+- [x] launchd plist + install/uninstall commands
+      — `keymaprd install` writes `~/Library/LaunchAgents/com.choolake.keymaprd.plist` and loads it
+      — `keymaprd uninstall` unloads and removes the plist
+      — Logs to `~/Library/Logs/keymaprd/`
+- [x] Homebrew tap + formula (`Formula/keymaprd.rb`)
+      — `depends_on "go" => :build` only; no hidapi or other brew deps
+- [x] Pre-built GitHub Actions bottles (`.github/workflows/release.yml`)
+      — builds arm64 + amd64 binaries on every `v*.*.*` tag push
+      — uploads to GitHub Release automatically
 
 ### Sprint 3 — Advanced Mappings (Future)
 - [ ] HID++ 2.0 protocol parser for gesture/top buttons
