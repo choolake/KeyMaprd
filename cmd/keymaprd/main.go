@@ -9,13 +9,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/choolake/keymaprd/internal/eventtap"
-	"github.com/choolake/keymaprd/internal/hid"
-	"github.com/choolake/keymaprd/internal/inject"
-	"github.com/choolake/keymaprd/internal/mapper"
+	"github.com/choolake/KeyMaprd/internal/eventtap"
+	"github.com/choolake/KeyMaprd/internal/hid"
+	"github.com/choolake/KeyMaprd/internal/inject"
+	"github.com/choolake/KeyMaprd/internal/mapper"
 )
 
-const version = "0.1.0"
+const version = "0.1.2"
 
 func main() {
 	// Handle subcommands before flag parsing — subcommands have no flags of their own.
@@ -173,4 +173,3 @@ func runStart(configPath string) {
 		}
 	}
 }
-

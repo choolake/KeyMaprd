@@ -1,4 +1,4 @@
-module github.com/choolake/keymaprd
+module github.com/choolake/KeyMaprd
 
 go 1.26.2
 
