@@ -28,8 +28,8 @@
 ### Homebrew
 
 ```bash
-brew tap choolake/KeyMaprd https://github.com/choolake/KeyMaprd.git
-brew install choolake/KeyMaprd/keymaprd
+brew tap choolake/tap
+brew install keymaprd
 ```
 
 ### From source

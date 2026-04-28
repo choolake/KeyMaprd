@@ -43,14 +43,17 @@ jobs:
             config.example.json
           generate_release_notes: true
 
-      - name: Update Homebrew formula sha256
+      - name: Update Homebrew formula in tap
         run: |
-          # Extract version from the tag (strips the leading 'v')
           VERSION="${GITHUB_REF_NAME}"
-          TARBALL_URL="https://github.com/choolake/KeyMapr/archive/refs/tags/${VERSION}.tar.gz"
+          TARBALL_URL="https://github.com/choolake/KeyMaprd/archive/refs/tags/${VERSION}.tar.gz"
 
           # Compute sha256 of the release tarball
           SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+
+          # Clone the tap repo using deploy token
+          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/choolake/homebrew-tap.git tap-repo
+          cd tap-repo
 
           # Update url and sha256 in the formula
           sed -i '' \
@@ -62,11 +65,10 @@ jobs:
 
           echo "Updated formula: url=${TARBALL_URL} sha256=${SHA256}"
 
-      - name: Commit updated formula back to main
-        run: |
+          # Commit and push back to the tap repo
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/keymaprd.rb
-          git diff --cached --quiet || git commit -m "chore: update formula for ${GITHUB_REF_NAME}"
-          git push origin HEAD:main
+          git diff --cached --quiet || git commit -m "chore: update keymaprd to ${VERSION}"
+          git push origin main
 
