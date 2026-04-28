@@ -25,18 +25,18 @@
 
 ## Installation
 
-### Homebrew *(coming soon)*
+### Homebrew
 
 ```bash
-brew tap choolake/keymaprd
-brew install keymaprd
+brew tap choolake/KeyMaprd https://github.com/choolake/KeyMaprd.git
+brew install choolake/KeyMaprd/keymaprd
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/choolake/keymaprd.git
-cd keymaprd
+git clone https://github.com/choolake/KeyMaprd.git
+cd KeyMaprd
 go build -o keymaprd ./cmd/keymaprd/
 codesign -s - -f --identifier com.choolake.keymaprd ./keymaprd
 sudo cp keymaprd /usr/local/bin/keymaprd
