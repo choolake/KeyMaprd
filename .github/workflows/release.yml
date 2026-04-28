@@ -52,7 +52,7 @@ jobs:
           SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
 
           # Clone the tap repo using deploy token
-          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/choolake/homebrew-tap.git tap-repo
+          git clone https://x-access-token:${{ secrets.TAP_TOKEN }}@github.com/choolake/homebrew-tap tap-repo
           cd tap-repo
 
           # Update url and sha256 in the formula
