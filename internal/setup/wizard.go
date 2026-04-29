@@ -53,12 +53,15 @@ type wizard struct {
 	mu            sync.Mutex
 	saved         bool
 	installDaemon bool
+	// existing config (non-nil if a config was found before the wizard ran)
+	existingCfg *mapper.Config
+	appendMode  bool // true = merge new into existing; false = overwrite
 	// widgets stored so app.SetInputCapture / goroutines can access them
 	// after app.Run() has started.
 	detectList   *tview.List
 	detectStatus *tview.TextView
 	saveBody     *tview.TextView  // save page body — needed to show error text
-	saveCfg      mapper.Config    // config being saved
+	saveCfg      mapper.Config    // new mappings being saved (before merge)
 	savePath     string           // path config will be written to
 }
 
@@ -75,6 +78,13 @@ func Run() Result {
 		pages:    tview.NewPages(),
 		seen:     make(map[uint8]bool),
 		mappings: make(map[uint8]string),
+	}
+
+	// Load existing config if present; default to append mode so the user
+	// doesn't accidentally overwrite mappings they've already set up.
+	if existing, err := mapper.LoadConfig(mapper.DefaultConfigPath()); err == nil {
+		w.existingCfg = existing
+		w.appendMode = true
 	}
 
 	w.pages.AddPage("welcome", w.buildWelcomePage(), true, true)
@@ -161,9 +171,8 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 			"[yellow]Step 1: Button Detection[white]\n\n" +
 				"Press each extra button on your mouse [::b]now[::] (e.g. thumb buttons).\n" +
 				"Each button number will appear in the list below.\n\n" +
-				"[gray]Tip: skip left (btn0), right (btn1), and middle click (btn2).[white]\n" +
-				"[gray]They are standard buttons and don't need mapping.[white]\n\n" +
-				"[green][ Enter ][white] Continue to assignment    [red][ Q ][white] Quit",
+				"[gray]Tip: left (btn0) and right (btn1) click are automatically ignored.[white]\n\n" +
+				"[green][ Enter ][white] Continue to assignment    [gray][ B ][white] Back    [red][ Q ][white] Quit",
 		)
 
 	status := tview.NewTextView().
@@ -196,6 +205,18 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 			return nil
 		}
 		switch event.Rune() {
+		case 'b', 'B':
+			// Stop detection, reset state, go back to welcome.
+			eventtap.Stop()
+			w.mu.Lock()
+			w.discovered = nil
+			w.seen = make(map[uint8]bool)
+			w.mu.Unlock()
+			w.detectList.Clear()
+			w.detectStatus.SetText("[gray]Starting button detection…[white]")
+			w.pages.SwitchToPage("welcome")
+			w.app.SetFocus(w.pages)
+			return nil
 		case 'q', 'Q':
 			eventtap.Stop()
 			w.app.Stop()
@@ -218,6 +239,14 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 // callback) so that direct widget mutations are safe. The background goroutine
 // uses QueueUpdateDraw correctly since it runs outside the event loop.
 func (w *wizard) startDetection() {
+	// Reset any state from a previous detection session.
+	w.mu.Lock()
+	w.discovered = nil
+	w.seen = make(map[uint8]bool)
+	w.mu.Unlock()
+	w.detectList.Clear()
+	w.detectStatus.SetText("[gray]Starting button detection…[white]")
+
 	events, err := eventtap.Start()
 	if err != nil {
 		// Direct SetText is safe — we are executing inside the event loop goroutine.
@@ -239,6 +268,9 @@ func (w *wizard) startDetection() {
 				continue // only register presses, not releases
 			}
 			btn := e.Button // new variable per iteration — safe to capture in closure below
+			if btn <= 1 {
+				continue // silently ignore left (btn0) and right (btn1) click
+			}
 
 			w.mu.Lock()
 			alreadySeen := w.seen[btn]
@@ -320,7 +352,7 @@ func (w *wizard) startAssignment(buttons []uint8, idx int) {
 			"[yellow]Step 2: Assign Actions  (%d of %d)[white]\n\n"+
 				"[::b]Button %d[::] was detected.\n"+
 				"Choose what it should do:\n\n"+
-				"[gray]Use arrow keys to navigate, Enter to select.[white]",
+				"[gray]↑ ↓ navigate  Enter select  B back  Q quit[white]",
 			idx+1, len(buttons), btn,
 		))
 
@@ -329,7 +361,18 @@ func (w *wizard) startAssignment(buttons []uint8, idx int) {
 		AddItem(presetList, 0, 1, true)
 
 	layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Rune() == 'q' || event.Rune() == 'Q' {
+		switch event.Rune() {
+		case 'b', 'B':
+			if idx == 0 {
+				// First button — go back to the detect page (eventtap already stopped).
+				w.pages.SwitchToPage("detect")
+				w.app.SetFocus(w.detectList)
+			} else {
+				// Go back to the previous button's assignment page.
+				w.startAssignment(buttons, idx-1)
+			}
+			return nil
+		case 'q', 'Q':
 			w.app.Stop()
 		}
 		return event
@@ -352,32 +395,48 @@ func (w *wizard) startAssignment(buttons []uint8, idx int) {
 func (w *wizard) buildSavePage() tview.Primitive {
 	configPath := mapper.DefaultConfigPath()
 
-	// Build the config preview
-	cfg := mapper.Config{Buttons: make(map[string]string)}
+	// Build the new-mappings-only config preview.
+	newCfg := mapper.Config{Buttons: make(map[string]string)}
 	for btn, action := range w.mappings {
-		cfg.Buttons[fmt.Sprintf("btn%d", btn)] = action
+		newCfg.Buttons[fmt.Sprintf("btn%d", btn)] = action
 	}
 
-	preview, err := json.MarshalIndent(cfg, "", "  ")
-	previewStr := string(preview)
-	if err != nil {
-		previewStr = fmt.Sprintf("error: %v", err)
+	var bodyText string
+	if w.existingCfg != nil {
+		existingJSON, _ := json.MarshalIndent(w.existingCfg, "", "  ")
+		newJSON, _ := json.MarshalIndent(newCfg, "", "  ")
+		modeLabel := "[red]Replace[white] (existing config will be overwritten)"
+		if w.appendMode {
+			modeLabel = "[green]Append[white] (new buttons merged into existing config)"
+		}
+		bodyText = fmt.Sprintf(
+			"[yellow]Step 3: Save Config[white]\n\n"+
+				"[::b]Config path:[::] [green]%s[white]\n\n"+
+				"[::b]Existing config:[::]\n[gray]%s[white]\n\n"+
+				"[::b]New buttons to add:[::]\n[cyan]%s[white]\n\n"+
+				"Mode: %s\n"+
+				"[gray][ A ][white] Toggle Append/Replace\n\n"+
+				"[green][ S ][white] Save    [gray][ B ][white] Back    [red][ Q ][white] Quit",
+			configPath, string(existingJSON), string(newJSON), modeLabel,
+		)
+	} else {
+		preview, _ := json.MarshalIndent(newCfg, "", "  ")
+		bodyText = fmt.Sprintf(
+			"[yellow]Step 3: Save Config[white]\n\n"+
+				"[::b]Config will be saved to:[::]\n  [green]%s[white]\n\n"+
+				"[::b]Preview:[::]\n[cyan]%s[white]\n\n"+
+				"[green][ S ][white] Save & Finish    [gray][ B ][white] Back    [red][ Q ][white] Quit",
+			configPath, string(preview),
+		)
 	}
 
 	body := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText(fmt.Sprintf(
-			"[yellow]Step 3: Save Config[white]\n\n"+
-				"[::b]Config will be saved to:[::]\n"+
-				"  [green]%s[white]\n\n"+
-				"[::b]Preview:[::]\n[cyan]%s[white]\n\n"+
-				"[green][ S ][white] Save & Finish    [gray][ B ][white] Back    [red][ Q ][white] Quit",
-			configPath, previewStr,
-		))
+		SetText(bodyText)
 
-	// Store body and config so handleSaveKey() can act on them.
+	// Store body and new config so handleSaveKey() can act on them.
 	w.saveBody = body
-	w.saveCfg = cfg
+	w.saveCfg = newCfg
 	w.savePath = configPath
 
 	frame := tview.NewFrame(body).SetBorders(1, 1, 1, 1, 2, 2)
@@ -420,7 +479,19 @@ func (w *wizard) buildDonePage(configPath string) tview.Primitive {
 func (w *wizard) handleSaveKey(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Rune() {
 	case 's', 'S':
-		if err := writeConfig(w.savePath, w.saveCfg); err != nil {
+		cfgToSave := w.saveCfg
+		if w.appendMode && w.existingCfg != nil {
+			// Merge: existing entries first, new mappings override on conflict.
+			merged := mapper.Config{Buttons: make(map[string]string)}
+			for k, v := range w.existingCfg.Buttons {
+				merged.Buttons[k] = v
+			}
+			for k, v := range w.saveCfg.Buttons {
+				merged.Buttons[k] = v
+			}
+			cfgToSave = merged
+		}
+		if err := writeConfig(w.savePath, cfgToSave); err != nil {
 			w.saveBody.SetText(fmt.Sprintf("[red]Error saving config: %v\n\nPress Q to quit.[white]", err))
 		} else {
 			w.saved = true
@@ -429,8 +500,21 @@ func (w *wizard) handleSaveKey(event *tcell.EventKey) *tcell.EventKey {
 			w.app.SetFocus(w.pages)
 		}
 		return nil
+	case 'a', 'A':
+		// Toggle append/replace mode and refresh the save page.
+		if w.existingCfg != nil {
+			w.appendMode = !w.appendMode
+			w.pages.RemovePage("save")
+			w.pages.AddPage("save", w.buildSavePage(), true, false)
+			w.pages.SwitchToPage("save")
+			w.app.SetFocus(w.pages)
+		}
+		return nil
 	case 'b', 'B':
-		w.startAssignment(w.discovered, 0)
+		// Go back to the last assignment page.
+		if len(w.discovered) > 0 {
+			w.startAssignment(w.discovered, len(w.discovered)-1)
+		}
 		return nil
 	case 'q', 'Q':
 		w.app.Stop()
