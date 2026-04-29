@@ -130,8 +130,13 @@ func runStart(configPath string) {
 	// NewWatcher loads the config and starts hot-reload in the background.
 	w, err := mapper.NewWatcher(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Tip: run 'keymaprd --dump' first to discover button numbers, then create %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "To get started, copy the example config:\n")
+		fmt.Fprintf(os.Stderr, "  mkdir -p ~/.config/keymaprd\n")
+		fmt.Fprintf(os.Stderr, "  cp /opt/homebrew/share/keymaprd/config.example.json ~/.config/keymaprd/config.json\n\n")
+		fmt.Fprintf(os.Stderr, "Or if installed from source:\n")
+		fmt.Fprintf(os.Stderr, "  cp config.example.json ~/.config/keymaprd/config.json\n\n")
+		fmt.Fprintf(os.Stderr, "Then run 'keymaprd --dump' to discover your button numbers.\n")
 		os.Exit(1)
 	}
 	defer w.Close()
