@@ -53,10 +53,13 @@ type wizard struct {
 	mu            sync.Mutex
 	saved         bool
 	installDaemon bool
-	// detect page widgets — stored here so startDetection() can access them
-	// after app.Run() has started (called from a key handler, not at build time).
+	// widgets stored so app.SetInputCapture / goroutines can access them
+	// after app.Run() has started.
 	detectList   *tview.List
 	detectStatus *tview.TextView
+	saveBody     *tview.TextView  // save page body — needed to show error text
+	saveCfg      mapper.Config    // config being saved
+	savePath     string           // path config will be written to
 }
 
 // Result is returned by Run() to tell the caller what actions the user requested.
@@ -76,6 +79,31 @@ func Run() Result {
 
 	w.pages.AddPage("welcome", w.buildWelcomePage(), true, true)
 	w.pages.AddPage("detect", w.buildDetectPage(), true, false)
+
+	// App-level input capture handles key events for all text-view pages
+	// (welcome, save, done). Detect/assign pages use focus-based dispatch since
+	// they contain focusable widgets (List, InputField) that need native key handling.
+	w.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		name, _ := w.pages.GetFrontPage()
+		switch name {
+		case "welcome":
+			switch event.Rune() {
+			case 's', 'S':
+				w.pages.SwitchToPage("detect")
+				w.app.SetFocus(w.pages)
+				w.startDetection()
+				return nil
+			case 'q', 'Q':
+				w.app.Stop()
+				return nil
+			}
+		case "save":
+			return w.handleSaveKey(event)
+		case "done":
+			return w.handleDoneKey(event)
+		}
+		return event
+	})
 
 	w.app.SetRoot(w.pages, true).EnableMouse(false)
 
@@ -112,18 +140,6 @@ func (w *wizard) buildWelcomePage() tview.Primitive {
 			"[green][ S ][white] Start    [red][ Q ][white] Quit\n",
 		logo,
 	)
-
-	body.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 's', 'S':
-			w.pages.SwitchToPage("detect")
-			w.app.SetFocus(w.pages)
-			w.startDetection() // start eventtap NOW (app is running)
-		case 'q', 'Q':
-			w.app.Stop()
-		}
-		return event
-	})
 
 	frame := tview.NewFrame(body).SetBorders(2, 2, 2, 1, 4, 4)
 	frame.SetBorder(true).SetBorderColor(tcell.ColorMediumPurple).
@@ -359,25 +375,10 @@ func (w *wizard) buildSavePage() tview.Primitive {
 			configPath, previewStr,
 		))
 
-	body.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 's', 'S':
-			if err := writeConfig(configPath, cfg); err != nil {
-				body.SetText(fmt.Sprintf("[red]Error saving config: %v\n\nPress Q to quit.[white]", err))
-			} else {
-				w.saved = true
-				w.pages.AddPage("done", w.buildDonePage(configPath), true, false)
-				w.pages.SwitchToPage("done")
-				w.app.SetFocus(w.pages)
-			}
-		case 'b', 'B':
-			// Go back to first assignment page
-			w.startAssignment(w.discovered, 0)
-		case 'q', 'Q':
-			w.app.Stop()
-		}
-		return event
-	})
+	// Store body and config so handleSaveKey() can act on them.
+	w.saveBody = body
+	w.saveCfg = cfg
+	w.savePath = configPath
 
 	frame := tview.NewFrame(body).SetBorders(1, 1, 1, 1, 2, 2)
 	frame.SetBorder(true).SetBorderColor(tcell.ColorMediumPurple).
@@ -405,21 +406,51 @@ func (w *wizard) buildDonePage(configPath string) tview.Primitive {
 			configPath,
 		))
 
-	body.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'y', 'Y':
-			w.installDaemon = true
-			w.app.Stop()
-		case 'n', 'N', 'q', 'Q':
-			w.app.Stop()
-		}
-		return event
-	})
-
 	frame := tview.NewFrame(body).SetBorders(2, 2, 2, 2, 4, 4)
 	frame.SetBorder(true).SetBorderColor(tcell.ColorGreen).
 		SetTitle(" KeyMapr Setup — Complete! ").SetTitleColor(tcell.ColorGreen)
 	return frame
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Key handlers called from app.SetInputCapture
+// ─────────────────────────────────────────────────────────────────────────────
+
+// handleSaveKey processes key events for the save page.
+func (w *wizard) handleSaveKey(event *tcell.EventKey) *tcell.EventKey {
+	switch event.Rune() {
+	case 's', 'S':
+		if err := writeConfig(w.savePath, w.saveCfg); err != nil {
+			w.saveBody.SetText(fmt.Sprintf("[red]Error saving config: %v\n\nPress Q to quit.[white]", err))
+		} else {
+			w.saved = true
+			w.pages.AddPage("done", w.buildDonePage(w.savePath), true, false)
+			w.pages.SwitchToPage("done")
+			w.app.SetFocus(w.pages)
+		}
+		return nil
+	case 'b', 'B':
+		w.startAssignment(w.discovered, 0)
+		return nil
+	case 'q', 'Q':
+		w.app.Stop()
+		return nil
+	}
+	return event
+}
+
+// handleDoneKey processes key events for the done page.
+func (w *wizard) handleDoneKey(event *tcell.EventKey) *tcell.EventKey {
+	switch event.Rune() {
+	case 'y', 'Y':
+		w.installDaemon = true
+		w.app.Stop()
+		return nil
+	case 'n', 'N', 'q', 'Q':
+		w.app.Stop()
+		return nil
+	}
+	return event
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
