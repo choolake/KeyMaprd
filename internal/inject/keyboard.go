@@ -60,6 +60,15 @@ var spaceActions = map[string]string{
 	"ctrl+right": "124", // kVK_RightArrow → switch to space on the right
 }
 
+// appLaunchActions maps named actions that are most reliably triggered by
+// launching the target application directly via osascript. F-key injection
+// for Mission Control / Launchpad is unreliable because users may remap F-keys
+// and the system handles these via a different event path than regular keys.
+var appLaunchActions = map[string]string{
+	"mission_control": "Mission Control",
+	"launchpad":       "Launchpad",
+}
+
 // CGEventFlags modifier bitmasks (from CoreGraphics/CGEventTypes.h).
 const (
 	flagCommand = 0x00100000
@@ -68,19 +77,6 @@ const (
 	flagControl = 0x00040000
 	flagNumPad  = 0x00200000 // must be set for arrow/navigation keys
 )
-
-// modifierKeyCodes maps a modifier flag to its virtual key code (kVK_* from Carbon/Events.h).
-// Sending explicit modifier key-down/up events before and after the main key
-// is required for system shortcuts (e.g. Mission Control ctrl+left) to fire.
-var modifierKeyCodes = []struct {
-	flag    uint64
-	keyCode int
-}{
-	{flagCommand, 0x37}, // kVK_Command (left cmd)
-	{flagShift, 0x38},   // kVK_Shift   (left shift)
-	{flagOption, 0x3A},  // kVK_Option  (left option/alt)
-	{flagControl, 0x3B}, // kVK_Control (left ctrl)
-}
 
 // navigationKeys is the set of keys that require flagNumPad to be set.
 // macOS real keyboards always set this flag for these keys — without it
@@ -121,12 +117,9 @@ var keyCodes = map[string]int{
 }
 
 // namedActions maps special action names to their default macOS keyboard shortcuts.
-// These are the system defaults — users can override by remapping F-keys in System Settings.
 var namedActions = map[string]string{
-	"mission_control": "f3", // F3 = Mission Control (default)
-	"launchpad":       "f4", // F4 = Launchpad (default)
-	"spotlight":       "cmd+space",
-	"screenshot":      "cmd+shift+3",
+	"spotlight":  "cmd+space",
+	"screenshot": "cmd+shift+3",
 }
 
 // Press parses an action string and injects the corresponding key events.
@@ -152,6 +145,13 @@ func Press(action string) error {
 			`tell application "System Events" to key code %s using {control down}`,
 			keyCode,
 		)
+		return exec.Command("osascript", "-e", script).Run()
+	}
+
+	// mission_control and launchpad are launched directly as apps — F-key injection
+	// is unreliable because the system routes these through a separate event path.
+	if appName, ok := appLaunchActions[normalized]; ok {
+		script := fmt.Sprintf(`tell application "%s" to launch`, appName)
 		return exec.Command("osascript", "-e", script).Run()
 	}
 
@@ -191,30 +191,11 @@ func Press(action string) error {
 		flags |= flagNumPad
 	}
 
-	// Send explicit modifier kCGEventFlagsChanged events before the main key.
-	// Modifier keys must use kCGEventFlagsChanged (not kCGEventKeyDown) — the
-	// Dock/WindowServer only tracks modifier state via FlagsChanged events.
-	// Without this, ctrl+left injection never reaches the space-switching handler.
-	for _, m := range modifierKeyCodes {
-		if flags&m.flag != 0 {
-			// Pass the full flags (including this modifier) so the session state
-			// correctly reflects "ctrl is now held".
-			C.postModifier(C.int(m.keyCode), C.int(1), C.uint64_t(flags))
-		}
-	}
-
-	// Post key down then key up — simulates a full key press.
+	// Post key down then key up with modifier flags set — simulates a full key press.
+	// CGEventPost with flags is sufficient for all apps and system shortcuts
+	// (except ctrl+left/right for Dock space switching, handled above via osascript).
 	C.postKey(C.int(keyCode), C.int(1), C.uint64_t(flags))
 	C.postKey(C.int(keyCode), C.int(0), C.uint64_t(flags))
-
-	// Release modifier keys in reverse order (mirrors real keyboard behaviour).
-	for i := len(modifierKeyCodes) - 1; i >= 0; i-- {
-		m := modifierKeyCodes[i]
-		if flags&m.flag != 0 {
-			// Pass flags WITHOUT this modifier to signal it is now released.
-			C.postModifier(C.int(m.keyCode), C.int(0), C.uint64_t(flags&^m.flag))
-		}
-	}
 
 	return nil
 }
