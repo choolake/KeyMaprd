@@ -214,24 +214,24 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // startDetection starts the CGEventTap and feeds events into the detect page list.
-// Must be called after app.Run() has started so QueueUpdateDraw works correctly.
+// MUST be called from within the tview event loop (e.g. from an inputCapture
+// callback) so that direct widget mutations are safe. The background goroutine
+// uses QueueUpdateDraw correctly since it runs outside the event loop.
 func (w *wizard) startDetection() {
 	events, err := eventtap.Start()
 	if err != nil {
-		w.app.QueueUpdateDraw(func() {
-			w.detectStatus.SetText(fmt.Sprintf(
-				"[red]Could not start event tap: %v\n\n"+
-					"Make sure Accessibility permission is granted:\n"+
-					"System Settings → Privacy & Security → Accessibility → add keymaprd[white]",
-				err,
-			))
-		})
+		// Direct SetText is safe — we are executing inside the event loop goroutine.
+		w.detectStatus.SetText(fmt.Sprintf(
+			"[red]Could not start event tap: %v\n\n"+
+				"Make sure Accessibility permission is granted:\n"+
+				"System Settings → Privacy & Security → Accessibility → add keymaprd[white]",
+			err,
+		))
 		return
 	}
 
-	w.app.QueueUpdateDraw(func() {
-		w.detectStatus.SetText("[green]Ready![white] Press each mouse button you want to map.")
-	})
+	// Direct SetText — safe from the event loop goroutine.
+	w.detectStatus.SetText("[green]Ready![white] Press each mouse button you want to map.")
 
 	go func() {
 		for e := range events {
