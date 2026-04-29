@@ -50,9 +50,13 @@ type wizard struct {
 	discovered []uint8          // button numbers the user pressed in order
 	seen       map[uint8]bool   // dedup set for discovered
 	mappings   map[uint8]string // button → action
-	mu         sync.Mutex
+	mu            sync.Mutex
 	saved         bool
 	installDaemon bool
+	// detect page widgets — stored here so startDetection() can access them
+	// after app.Run() has started (called from a key handler, not at build time).
+	detectList   *tview.List
+	detectStatus *tview.TextView
 }
 
 // Result is returned by Run() to tell the caller what actions the user requested.
@@ -114,6 +118,7 @@ func (w *wizard) buildWelcomePage() tview.Primitive {
 		case 's', 'S':
 			w.pages.SwitchToPage("detect")
 			w.app.SetFocus(w.pages)
+			w.startDetection() // start eventtap NOW (app is running)
 		case 'q', 'Q':
 			w.app.Stop()
 		}
@@ -147,44 +152,16 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 
 	status := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("[gray]Waiting for button presses…[white]")
+		SetText("[gray]Starting button detection…[white]")
 
-	// Start the event tap and feed detected buttons to the list.
-	events, err := eventtap.Start()
-	if err != nil {
-		status.SetText(fmt.Sprintf("[red]Could not start event tap: %v\n\nMake sure Accessibility permission is granted.[white]", err))
-	} else {
-		go func() {
-			for e := range events {
-				if !e.Down {
-					continue // only register on press, not release
-				}
-				btn := e.Button
-				w.mu.Lock()
-				alreadySeen := w.seen[btn]
-				if !alreadySeen {
-					w.seen[btn] = true
-					w.discovered = append(w.discovered, btn)
-				}
-				w.mu.Unlock()
-
-				if !alreadySeen {
-					w.app.QueueUpdateDraw(func() {
-						list.AddItem(fmt.Sprintf("  btn%d  — ready to assign", btn), "", 0, nil)
-						status.SetText(fmt.Sprintf(
-							"[green]%d button(s) detected.[white] Keep pressing or press [green]Enter[white] to continue.",
-							list.GetItemCount(),
-						))
-					})
-				}
-			}
-		}()
-	}
+	// Store widgets so startDetection() can reach them after app.Run() begins.
+	w.detectList = list
+	w.detectStatus = status
 
 	layout := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(instructions, 10, 0, false).
 		AddItem(list, 0, 1, true).
-		AddItem(status, 1, 0, false)
+		AddItem(status, 3, 0, false)
 
 	layout.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -214,6 +191,58 @@ func (w *wizard) buildDetectPage() tview.Primitive {
 	frame.SetBorder(true).SetBorderColor(tcell.ColorMediumPurple).
 		SetTitle(" KeyMapr Setup — Step 1 of 3 ").SetTitleColor(tcell.ColorYellow)
 	return frame
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detection goroutine (started AFTER app.Run(), i.e. from a key handler)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// startDetection starts the CGEventTap and feeds events into the detect page list.
+// Must be called after app.Run() has started so QueueUpdateDraw works correctly.
+func (w *wizard) startDetection() {
+	events, err := eventtap.Start()
+	if err != nil {
+		w.app.QueueUpdateDraw(func() {
+			w.detectStatus.SetText(fmt.Sprintf(
+				"[red]Could not start event tap: %v\n\n"+
+					"Make sure Accessibility permission is granted:\n"+
+					"System Settings → Privacy & Security → Accessibility → add keymaprd[white]",
+				err,
+			))
+		})
+		return
+	}
+
+	w.app.QueueUpdateDraw(func() {
+		w.detectStatus.SetText("[green]Ready![white] Press each mouse button you want to map.")
+	})
+
+	go func() {
+		for e := range events {
+			if !e.Down {
+				continue // only register presses, not releases
+			}
+			btn := e.Button // new variable per iteration — safe to capture in closure below
+
+			w.mu.Lock()
+			alreadySeen := w.seen[btn]
+			if !alreadySeen {
+				w.seen[btn] = true
+				w.discovered = append(w.discovered, btn)
+			}
+			w.mu.Unlock()
+
+			if !alreadySeen {
+				w.app.QueueUpdateDraw(func() {
+					w.detectList.AddItem(fmt.Sprintf("  btn%d  — ready to assign", btn), "", 0, nil)
+					w.detectStatus.SetText(fmt.Sprintf(
+						"[green]%d button(s) detected.[white] Keep pressing or press [green]Enter[white] to continue.",
+						w.detectList.GetItemCount(),
+					))
+				})
+			}
+		}
+	}()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
