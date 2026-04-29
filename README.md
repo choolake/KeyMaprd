@@ -1,13 +1,14 @@
 # KeyMapr
 
 > Remap your Logitech MX Master mouse buttons to any keyboard shortcut on macOS.  
-> No Logitech Options+ required. Runs silently in the background. Configured via a simple JSON file.
+> No Logitech Options+ required. Runs silently in the background.
 
 ---
 
 ## Features
 
 - 🖱️ **Remap any extra mouse button** to any keyboard shortcut
+- 🧙 **Interactive setup wizard** — launches on first run, no manual JSON editing needed
 - ⚡ **Lightweight daemon** — runs via launchd, auto-starts at login
 - 🔄 **Hot-reload config** — edit your JSON and changes apply instantly, no restart needed
 - 🔍 **`--dump` mode** — discover your button numbers by pressing each one
@@ -25,11 +26,16 @@
 
 ## Installation
 
-### Homebrew
+### Homebrew (recommended)
 
 ```bash
-brew tap choolake/tap
-brew install keymaprd
+brew install choolake/tap/keymaprd
+```
+
+Then just run it — the wizard handles everything:
+
+```bash
+keymaprd
 ```
 
 ### From source
@@ -48,9 +54,29 @@ sudo cp keymaprd /usr/local/bin/keymaprd
 
 ## Quick Start
 
-### 1. Find your button numbers
+### First run — interactive wizard
 
-Run the dump mode and press each button on your mouse:
+On first launch (when no config exists), the wizard starts automatically:
+
+```bash
+keymaprd
+```
+
+The wizard walks you through:
+1. **Button detection** — press each mouse button you want to map
+2. **Action assignment** — pick from a preset list or type a custom shortcut
+3. **Save** — writes `~/.config/keymaprd/config.json`
+4. **Auto-start** — optionally installs as a login daemon
+
+To re-run the wizard at any time:
+
+```bash
+keymaprd setup
+```
+
+### Manual config (advanced)
+
+If you prefer editing JSON directly, run `--dump` to find your button numbers:
 
 ```bash
 keymaprd --dump
@@ -62,14 +88,7 @@ Button 3  DOWN  → config key: "btn3"
 Button 4  DOWN  → config key: "btn4"
 ```
 
-### 2. Create your config
-
-```bash
-mkdir -p ~/.config/keymaprd
-cp /usr/local/share/keymaprd/config.example.json ~/.config/keymaprd/config.json
-```
-
-Edit `~/.config/keymaprd/config.json`:
+Then edit `~/.config/keymaprd/config.json`:
 
 ```json
 {
@@ -82,25 +101,7 @@ Edit `~/.config/keymaprd/config.json`:
 }
 ```
 
-### 3. Run it
-
-```bash
-keymaprd
-```
-
-### 4. Install as a background daemon (auto-start at login)
-
-```bash
-keymaprd install
-```
-
-To uninstall:
-
-```bash
-keymaprd uninstall
-```
-
----
+Changes to this file are applied instantly — no restart required.
 
 ## Config Reference
 
@@ -156,7 +157,8 @@ Changes to this file are applied instantly — no restart required.
 ## CLI Reference
 
 ```
-keymaprd                          Start the daemon (foreground)
+keymaprd                          Start (wizard auto-launches on first run)
+keymaprd setup                    Re-run the interactive setup wizard
 keymaprd install                  Install as a launchd LaunchAgent (auto-start at login)
 keymaprd uninstall                Remove the LaunchAgent
 keymaprd --dump                   Print button events live (use to discover button numbers)

@@ -51,12 +51,18 @@ type wizard struct {
 	seen       map[uint8]bool   // dedup set for discovered
 	mappings   map[uint8]string // button → action
 	mu         sync.Mutex
-	saved      bool
+	saved         bool
+	installDaemon bool
+}
+
+// Result is returned by Run() to tell the caller what actions the user requested.
+type Result struct {
+	Saved         bool // config was written successfully
+	InstallDaemon bool // user wants to install as a login daemon
 }
 
 // Run launches the interactive setup wizard.
-// Returns true if a config was successfully written, false if cancelled.
-func Run() bool {
+func Run() Result {
 	w := &wizard{
 		app:      tview.NewApplication(),
 		pages:    tview.NewPages(),
@@ -70,9 +76,9 @@ func Run() bool {
 	w.app.SetRoot(w.pages, true).EnableMouse(false)
 
 	if err := w.app.Run(); err != nil {
-		return false
+		return Result{}
 	}
-	return w.saved
+	return Result{Saved: w.saved, InstallDaemon: w.installDaemon}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -359,28 +365,23 @@ func (w *wizard) buildDonePage(configPath string) tview.Primitive {
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
 		SetText(fmt.Sprintf(
-			"[green]✓ Config saved successfully![white]\n\n"+
-				"[::b]%s[::]\n\n"+
-				"[yellow]Next steps:[white]\n\n"+
-				"  1. Grant Accessibility permission if you haven't already:\n"+
-				"     System Settings → Privacy & Security → Accessibility\n\n"+
-				"  2. Start keymaprd automatically at login:\n"+
-				"     [cyan]keymaprd install[white]\n\n"+
-				"  3. Or run it manually:\n"+
-				"     [cyan]keymaprd[white]\n\n"+
-				"  4. To re-run this wizard later, delete your config.json\n"+
-				"     and run [cyan]keymaprd[white] again.\n\n"+
-				"[green][ Enter / Q ][white] Close and start keymaprd",
+			"[green]✓ Config saved![white]  [::b]%s[::]\n\n"+
+				"[yellow]One thing left — Accessibility permission:[white]\n"+
+				"  System Settings → Privacy & Security → Accessibility\n"+
+				"  Add [::b]keymaprd[::] to the list\n\n"+
+				"[yellow]Auto-start at login?[white]\n\n"+
+				"  [green][ Y ][white] Yes — install as LaunchAgent (runs on every login)\n"+
+				"  [gray][ N ][white] No  — I'll run [cyan]keymaprd[white] manually\n\n"+
+				"[gray]Tip: to re-run this wizard, delete config.json and run keymaprd again.[white]",
 			configPath,
 		))
 
 	body.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyEnter:
-			w.app.Stop()
-		}
 		switch event.Rune() {
-		case 'q', 'Q':
+		case 'y', 'Y':
+			w.installDaemon = true
+			w.app.Stop()
+		case 'n', 'N', 'q', 'Q':
 			w.app.Stop()
 		}
 		return event

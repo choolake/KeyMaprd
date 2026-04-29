@@ -28,6 +28,9 @@ func main() {
 		case "uninstall":
 			runUninstall()
 			return
+		case "setup":
+			runSetup()
+			return
 		}
 	}
 
@@ -132,10 +135,19 @@ func runStart(configPath string) {
 	// If config does not exist, launch the interactive setup wizard.
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		fmt.Println("No config found — launching setup wizard\u2026")
-		if !setup.Run() {
+		result := setup.Run()
+		if !result.Saved {
+			// User cancelled the wizard — nothing to do.
 			fmt.Println("Setup cancelled.")
 			os.Exit(0)
 		}
+		if result.InstallDaemon {
+			// User chose to install as a LaunchAgent — do it now before starting.
+			// launchd will re-launch us automatically; exit to avoid double-running.
+			runInstall()
+			os.Exit(0)
+		}
+		// Wizard wrote the config — fall through and start normally.
 		fmt.Println()
 	}
 
@@ -188,5 +200,19 @@ func runStart(configPath string) {
 			fmt.Println("Shutting down.")
 			return
 		}
+	}
+}
+
+// runSetup launches the interactive TUI config wizard explicitly.
+// Users can re-run it at any time with: keymaprd setup
+func runSetup() {
+	result := setup.Run()
+	if !result.Saved {
+		fmt.Println("Setup cancelled — no changes made.")
+		return
+	}
+	fmt.Println("Config saved.")
+	if result.InstallDaemon {
+		runInstall()
 	}
 }
