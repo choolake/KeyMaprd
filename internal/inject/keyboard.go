@@ -49,24 +49,13 @@ import (
 	"strings"
 )
 
-// spaceActions maps ctrl+arrow combos that macOS won't honour via CGEventPost
-// to their AppleScript key codes. The Dock's space-switching handler cannot be
-// triggered by synthetic CGEvents (Apple security hardening since Ventura), so
-// we shell out to osascript which goes through the Accessibility API instead.
-// Only ctrl+left and ctrl+right are routed this way; everything else uses the
-// normal CGEventPost path.
-var spaceActions = map[string]string{
-	"ctrl+left":  "123", // kVK_LeftArrow  → switch to space on the left
-	"ctrl+right": "124", // kVK_RightArrow → switch to space on the right
-}
-
-// appLaunchActions maps named actions that are most reliably triggered by
-// launching the target application directly via osascript. F-key injection
-// for Mission Control / Launchpad is unreliable because users may remap F-keys
-// and the system handles these via a different event path than regular keys.
+// appLaunchActions maps named actions to their app path (launched via `open`).
+// Using `open` instead of osascript avoids Accessibility permission issues when
+// running as a LaunchAgent — `open` goes through Launch Services which works
+// in any execution context.
 var appLaunchActions = map[string]string{
-	"mission_control": "Mission Control",
-	"launchpad":       "Launchpad",
+	"mission_control": "/System/Applications/Mission Control.app",
+	"launchpad":       "", // no standalone app — inject F4 at HID level instead
 }
 
 // CGEventFlags modifier bitmasks (from CoreGraphics/CGEventTypes.h).
@@ -77,6 +66,10 @@ const (
 	flagControl = 0x00040000
 	flagNumPad  = 0x00200000 // must be set for arrow/navigation keys
 )
+
+// kVK_Control is the Carbon virtual key code for the left Control key.
+// Required when sending kCGEventFlagsChanged for ctrl modifiers.
+const kVK_Control = 0x3B
 
 // navigationKeys is the set of keys that require flagNumPad to be set.
 // macOS real keyboards always set this flag for these keys — without it
@@ -127,32 +120,27 @@ var namedActions = map[string]string{
 //   - "space"              — single key
 //   - "cmd+space"          — key with modifiers (cmd, shift, option/opt, ctrl)
 //   - "cmd+shift+3"        — multiple modifiers
-//   - "mission_control"    — named action (expanded to its key combo)
+//   - "mission_control"    — named action (launches via open or HID injection)
 func Press(action string) error {
-	// Resolve named actions first.
+	// Resolve named shortcuts first.
 	if resolved, ok := namedActions[action]; ok {
 		action = resolved
 	}
 
 	normalized := strings.ToLower(action)
 
-	// ctrl+left and ctrl+right for space switching cannot be triggered via
-	// CGEventPost on macOS Ventura/Sonoma — the Dock ignores synthetic ctrl
-	// events even at kCGHIDEventTap. Route these through osascript which uses
-	// the Accessibility API and is reliably honoured by Mission Control.
-	if keyCode, ok := spaceActions[normalized]; ok {
-		script := fmt.Sprintf(
-			`tell application "System Events" to key code %s using {control down}`,
-			keyCode,
-		)
-		return exec.Command("osascript", "-e", script).Run()
-	}
-
-	// mission_control and launchpad are launched directly as apps — F-key injection
-	// is unreliable because the system routes these through a separate event path.
-	if appName, ok := appLaunchActions[normalized]; ok {
-		script := fmt.Sprintf(`tell application "%s" to launch`, appName)
-		return exec.Command("osascript", "-e", script).Run()
+	// Named app/system actions: launch via `open` or inject F-key at HID level.
+	// We do NOT use osascript/System Events here because those require Accessibility
+	// for the osascript process itself, which fails when running as a LaunchAgent.
+	if appPath, ok := appLaunchActions[normalized]; ok {
+		if appPath != "" {
+			// Launch app directly via Launch Services — works from any context.
+			return exec.Command("open", appPath).Run()
+		}
+		// launchpad: inject F4 at kCGHIDEventTap — the Dock intercepts it.
+		C.postKey(C.int(keyCodes["f4"]), C.int(1), 0)
+		C.postKey(C.int(keyCodes["f4"]), C.int(0), 0)
+		return nil
 	}
 
 	parts := strings.Split(normalized, "+")
@@ -170,6 +158,7 @@ func Press(action string) error {
 	}
 
 	var flags uint64
+	hasCtrl := false
 	for _, mod := range modifiers {
 		switch mod {
 		case "cmd", "command":
@@ -180,6 +169,7 @@ func Press(action string) error {
 			flags |= flagOption
 		case "ctrl", "control":
 			flags |= flagControl
+			hasCtrl = true
 		default:
 			return fmt.Errorf("unknown modifier %q in action %q", mod, action)
 		}
@@ -191,11 +181,60 @@ func Press(action string) error {
 		flags |= flagNumPad
 	}
 
-	// Post key down then key up with modifier flags set — simulates a full key press.
-	// CGEventPost with flags is sufficient for all apps and system shortcuts
-	// (except ctrl+left/right for Dock space switching, handled above via osascript).
+	// When ctrl is involved, send proper kCGEventFlagsChanged events around the
+	// key press. The Dock's space-switcher and other system handlers only respond
+	// to kCGEventFlagsChanged for modifier tracking — a plain kCGEventKeyDown
+	// with ctrl flags embedded is not enough for ctrl+arrow space switching.
+	if hasCtrl {
+		C.postModifier(C.int(kVK_Control), C.int(1), C.uint64_t(flags))
+		C.postKey(C.int(keyCode), C.int(1), C.uint64_t(flags))
+		C.postKey(C.int(keyCode), C.int(0), C.uint64_t(flags))
+		C.postModifier(C.int(kVK_Control), C.int(0), 0)
+		return nil
+	}
+
+	// Standard key press: down then up with modifier flags.
 	C.postKey(C.int(keyCode), C.int(1), C.uint64_t(flags))
 	C.postKey(C.int(keyCode), C.int(0), C.uint64_t(flags))
-
 	return nil
 }
+
+/*
+#cgo LDFLAGS: -framework CoreGraphics -framework CoreFoundation
+#include <CoreGraphics/CGEvent.h>
+#include <CoreGraphics/CGEventTypes.h>
+#include <CoreGraphics/CGEventSource.h>
+#include <CoreFoundation/CoreFoundation.h>
+
+// postKey posts a regular key down or key up event with the given flags.
+// Used for non-modifier keys (letters, arrows, function keys, etc.).
+void postKey(int keyCode, int down, uint64_t flags) {
+    CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+    CGEventRef e = CGEventCreateKeyboardEvent(src, (CGKeyCode)keyCode, down);
+    CGEventSetFlags(e, (CGEventFlags)flags);
+    CGEventPost(kCGHIDEventTap, e);
+    CFRelease(e);
+    if (src) CFRelease(src);
+}
+
+// postModifier sends a kCGEventFlagsChanged event for a modifier key.
+//
+// Real keyboards NEVER send kCGEventKeyDown/Up for modifier keys — they always
+// send kCGEventFlagsChanged. The Dock (which handles ctrl+arrow for space
+// switching) and WindowServer both specifically watch for kCGEventFlagsChanged
+// to track the modifier state. Sending a regular kCGEventKeyDown for ctrl is
+// ignored by the Dock, which is why ctrl+left never switched spaces.
+//
+// flags should include the modifier's own flag when pressing (down=1) and
+// omit it when releasing (down=0), plus any other already-held modifiers.
+void postModifier(int keyCode, int down, uint64_t flags) {
+    CGEventSourceRef src = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+    CGEventRef e = CGEventCreate(src);
+    CGEventSetType(e, kCGEventFlagsChanged);
+    CGEventSetIntegerValueField(e, kCGKeyboardEventKeycode, (int64_t)keyCode);
+    CGEventSetFlags(e, (CGEventFlags)flags);
+    CGEventPost(kCGHIDEventTap, e);
+    CFRelease(e);
+    if (src) CFRelease(src);
+}
+*/
