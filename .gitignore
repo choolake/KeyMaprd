@@ -1,5 +1,5 @@
-# Compiled binary
-keymaprd
+# Compiled binary (only the root binary, not the cmd/keymaprd/ source directory)
+/keymaprd
 
 # Go build cache
 *.test

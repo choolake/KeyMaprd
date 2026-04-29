@@ -207,7 +207,13 @@ Concepts this project will teach, in order of encounter:
       — uploads to GitHub Release automatically
 
 ### Sprint 3 — Advanced Mappings (Future)
-- [ ] HID++ 2.0 protocol parser for gesture/top buttons
+- [ ] **HID++ 2.0 protocol parser for gesture/top button (btn5)**
+      — btn5 is a Logitech proprietary gesture button, NOT a standard HID button
+      — it sends HID++ 2.0 feature reports, not `Button usage page (0x0009)` events
+      — neither CGEventTap nor IOHIDManager input callbacks can see it
+      — fix requires: open raw HID device, send `HIDPP_GET_FEATURE` requests,
+        enable `GestureButtonControl` feature (0x2150), parse incoming feature reports
+      — this is what LogiOps (Linux) and Options+ (macOS) do internally
 - [ ] Mouse event actions (not just keyboard)
 - [ ] App-specific profiles (different mappings per frontmost app)
 - [ ] GUI config editor (optional)
