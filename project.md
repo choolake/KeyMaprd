@@ -207,7 +207,12 @@ Concepts this project will teach, in order of encounter:
       — uploads to GitHub Release automatically
 
 ### Sprint 3 — Make User Friendly 
-- [ ] Investigate the ways to make the installtion frictionless and impliment the quick wins (copy config, service instlaltion are difficult for most users) 
+- [x] Investigate the ways to make the installtion frictionless and impliment the quick wins
+      — `brew install choolake/tap/keymaprd` is now a single-line install
+      — wizard auto-launches on first run (no manual config copy)
+      — wizard done page offers Y/N to install as LaunchAgent (calls `keymaprd install`)
+      — `keymaprd setup` subcommand re-runs wizard at any time
+      — simplified brew caveats: just says "run keymaprd"
 - [x] Fun TUI config editor — `internal/setup/wizard.go` using `tview`
       — launches automatically on first run when `~/.config/keymaprd/config.json` is missing
       — Step 1: live button detection (press each button, they appear in the list)
