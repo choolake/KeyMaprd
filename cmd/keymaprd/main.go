@@ -13,6 +13,7 @@ import (
 	"github.com/choolake/KeyMaprd/internal/hid"
 	"github.com/choolake/KeyMaprd/internal/inject"
 	"github.com/choolake/KeyMaprd/internal/mapper"
+	"github.com/choolake/KeyMaprd/internal/setup"
 )
 
 const version = "0.2.0"
@@ -123,9 +124,20 @@ func runDump() {
 }
 
 // runStart loads config, starts watching it for changes, and runs the main remapping loop.
+// On first run (no config.json), it launches the interactive TUI setup wizard.
 func runStart(configPath string) {
 	fmt.Printf("keymaprd v%s starting…\n", version)
 	fmt.Printf("Config: %s\n\n", configPath)
+
+	// If config does not exist, launch the interactive setup wizard.
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		fmt.Println("No config found — launching setup wizard\u2026")
+		if !setup.Run() {
+			fmt.Println("Setup cancelled.")
+			os.Exit(0)
+		}
+		fmt.Println()
+	}
 
 	// NewWatcher loads the config and starts hot-reload in the background.
 	w, err := mapper.NewWatcher(configPath)

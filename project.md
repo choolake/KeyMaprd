@@ -206,7 +206,18 @@ Concepts this project will teach, in order of encounter:
       — builds arm64 + amd64 binaries on every `v*.*.*` tag push
       — uploads to GitHub Release automatically
 
-### Sprint 3 — Advanced Mappings (Future)
+### Sprint 3 — Make User Friendly 
+- [ ] Investigate the ways to make the installtion frictionless and impliment the quick wins (copy config, service instlaltion are difficult for most users) 
+- [x] Fun TUI config editor — `internal/setup/wizard.go` using `tview`
+      — launches automatically on first run when `~/.config/keymaprd/config.json` is missing
+      — Step 1: live button detection (press each button, they appear in the list)
+      — Step 2: per-button action picker (presets + custom shortcut input)
+      — Step 3: config preview → save to `~/.config/keymaprd/config.json`
+      — after wizard, keymaprd starts normally without restart needed
+- [x] bug: /opt/homebrew/share/keymaprd/config.example.json not available after brew install
+      — fixed formula: added `(share/"keymaprd").install "config.example.json"`
+
+### Sprint 4 — Advanced Mappings (Future)
 - [ ] **HID++ 2.0 protocol parser for gesture/top button (btn5)**
       — btn5 is a Logitech proprietary gesture button, NOT a standard HID button
       — it sends HID++ 2.0 feature reports, not `Button usage page (0x0009)` events
@@ -216,7 +227,7 @@ Concepts this project will teach, in order of encounter:
       — this is what LogiOps (Linux) and Options+ (macOS) do internally
 - [ ] Mouse event actions (not just keyboard)
 - [ ] App-specific profiles (different mappings per frontmost app)
-- [ ] GUI config editor (optional)
+
 
 
 
