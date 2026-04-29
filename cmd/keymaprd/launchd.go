@@ -143,21 +143,35 @@ func runUninstall() {
 	fmt.Println("  The plist has been removed; it will not start at next login.")
 }
 
-// launchctlLoad loads (enables + starts) a LaunchAgent plist.
-func launchctlLoad(plistFile string) error {
-	// `launchctl load -w` enables and starts the agent immediately.
-	cmd := exec.Command("launchctl", "load", "-w", plistFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+// userDomain returns the launchctl user domain target, e.g. "gui/501".
+func userDomain() string {
+	return fmt.Sprintf("gui/%d", os.Getuid())
 }
 
-// launchctlUnload stops and unloads a LaunchAgent plist.
-func launchctlUnload(plistFile string) error {
-	cmd := exec.Command("launchctl", "unload", "-w", plistFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+// launchctlLoad bootstraps (enables + starts) a LaunchAgent plist.
+// Uses the modern `launchctl bootstrap` API (replaces deprecated `load`).
+// If the service is already loaded, it boots it out first so the new plist
+// takes effect cleanly.
+func launchctlLoad(plistFile string) error {
+	domain := userDomain()
+	// Silently remove any existing registration so a fresh bootstrap works.
+	_ = exec.Command("launchctl", "bootout", domain+"/"+plistLabel).Run()
+
+	out, err := exec.Command("launchctl", "bootstrap", domain, plistFile).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, string(out))
+	}
+	return nil
+}
+
+// launchctlUnload boots out (stops + disables) the LaunchAgent.
+// Uses the modern `launchctl bootout` API (replaces deprecated `unload`).
+func launchctlUnload(_ string) error {
+	out, err := exec.Command("launchctl", "bootout", userDomain()+"/"+plistLabel).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, string(out))
+	}
+	return nil
 }
 
 func fatalf(format string, args ...any) {
