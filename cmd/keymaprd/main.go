@@ -15,7 +15,7 @@ import (
 	"github.com/choolake/KeyMaprd/internal/mapper"
 )
 
-const version = "0.1.2"
+const version = "0.2.0"
 
 func main() {
 	// Handle subcommands before flag parsing — subcommands have no flags of their own.
