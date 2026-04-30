@@ -20,7 +20,7 @@
 ## Requirements
 
 - macOS Ventura or later (Apple Silicon and Intel supported)
-- **Accessibility** permission (prompted on first run)
+- **Accessibility** + **Input Monitoring** permissions (prompted on first run)
 
 ---
 
@@ -171,14 +171,19 @@ keymaprd --version                Print version
 
 ## Permissions
 
-KeyMapr requires **Accessibility** permission to:
-1. Read mouse button events (via CGEventTap)
-2. Inject keyboard events (via CGEventPost)
+KeyMapr requires **two** macOS privacy permissions:
 
-macOS will prompt you automatically on first run. If it doesn't, go to:
-**System Settings → Privacy & Security → Accessibility** and add your terminal (or `keymaprd` if running via launchd).
+| Permission | Why |
+|---|---|
+| **Accessibility** | Allows `CGEventTapCreate` to succeed and lets keymaprd inject keyboard events |
+| **Input Monitoring** | Required by WindowServer before it delivers tap events to the process — without this, the tap creates fine but callbacks never fire (critical when running as a LaunchAgent) |
 
-> **Note:** Input Monitoring permission is **not** required. KeyMapr uses CGEventTap in listen-only mode which only needs Accessibility.
+macOS will prompt you automatically on first run. If it doesn't, grant both manually:
+
+- **System Settings → Privacy & Security → Accessibility** → add `keymaprd`
+- **System Settings → Privacy & Security → Input Monitoring** → add `keymaprd`
+
+> **Dev note:** Ad-hoc signing (`codesign -s -`) changes the binary hash on every rebuild, silently revoking both permissions. Re-grant them after each `go build`. A real Apple Developer certificate avoids this churn.
 
 ---
 
