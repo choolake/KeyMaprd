@@ -37,6 +37,10 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <key>RunAtLoad</key>
   <true/>
 
+  <!-- Require the Aqua (GUI) session so CGEventTap and Accessibility API work -->
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+
   <!-- Write stdout/stderr to log files for debugging -->
   <key>StandardOutPath</key>
   <string>{{.LogDir}}/keymaprd.log</string>
@@ -144,20 +148,15 @@ func runUninstall() {
 }
 
 // launchctlLoad loads (enables + starts) a LaunchAgent plist.
+// On macOS Ventura+ launchctl load prints a deprecation warning to stderr even
+// on success; we discard stderr so users never see that noise.
 func launchctlLoad(plistFile string) error {
-	// `launchctl load -w` enables and starts the agent immediately.
-	cmd := exec.Command("launchctl", "load", "-w", plistFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return exec.Command("launchctl", "load", "-w", plistFile).Run()
 }
 
 // launchctlUnload stops and unloads a LaunchAgent plist.
 func launchctlUnload(plistFile string) error {
-	cmd := exec.Command("launchctl", "unload", "-w", plistFile)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return exec.Command("launchctl", "unload", "-w", plistFile).Run()
 }
 
 func fatalf(format string, args ...any) {

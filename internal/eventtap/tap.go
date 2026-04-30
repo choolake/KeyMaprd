@@ -4,7 +4,14 @@
 // at the session level. This is the correct macOS approach — it works
 // with Bluetooth mice and doesn't require opening raw HID devices.
 //
-// Requires: System Settings → Privacy & Security → Accessibility → your binary ON.
+// Requires two macOS privacy permissions for the binary:
+//   1. System Settings → Privacy & Security → Accessibility
+//   2. System Settings → Privacy & Security → Input Monitoring
+//
+// Both are needed: Accessibility allows CGEventTapCreate to succeed;
+// Input Monitoring (kTCCServiceListenEvent) is checked by WindowServer before
+// delivering events to the tap. Without it, the tap creates fine but callbacks
+// never fire — especially when running as a LaunchAgent service.
 package eventtap
 
 /*
@@ -127,7 +134,7 @@ switch readFd {
 case -1:
 return nil, fmt.Errorf("pipe creation failed")
 case -2:
-return nil, fmt.Errorf("CGEventTapCreate failed — grant Accessibility permission in:\nSystem Settings → Privacy & Security → Accessibility → add keymaprd")
+return nil, fmt.Errorf("CGEventTapCreate failed — grant both permissions in System Settings → Privacy & Security:\n  1. Accessibility     → add keymaprd\n  2. Input Monitoring  → add keymaprd")
 }
 
 events := make(chan Event, 64)

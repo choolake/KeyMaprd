@@ -13,9 +13,10 @@ import (
 	"github.com/choolake/KeyMaprd/internal/hid"
 	"github.com/choolake/KeyMaprd/internal/inject"
 	"github.com/choolake/KeyMaprd/internal/mapper"
+	"github.com/choolake/KeyMaprd/internal/setup"
 )
 
-const version = "0.1.2"
+const version = "0.3.0"
 
 func main() {
 	// Handle subcommands before flag parsing — subcommands have no flags of their own.
@@ -26,6 +27,9 @@ func main() {
 			return
 		case "uninstall":
 			runUninstall()
+			return
+		case "setup":
+			runSetup()
 			return
 		}
 	}
@@ -123,15 +127,40 @@ func runDump() {
 }
 
 // runStart loads config, starts watching it for changes, and runs the main remapping loop.
+// On first run (no config.json), it launches the interactive TUI setup wizard.
 func runStart(configPath string) {
 	fmt.Printf("keymaprd v%s starting…\n", version)
 	fmt.Printf("Config: %s\n\n", configPath)
 
+	// If config does not exist, launch the interactive setup wizard.
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		fmt.Println("No config found — launching setup wizard\u2026")
+		result := setup.Run()
+		if !result.Saved {
+			// User cancelled the wizard — nothing to do.
+			fmt.Println("Setup cancelled.")
+			os.Exit(0)
+		}
+		if result.InstallDaemon {
+			// User chose to install as a LaunchAgent — do it now before starting.
+			// launchd will re-launch us automatically; exit to avoid double-running.
+			runInstall()
+			os.Exit(0)
+		}
+		// Wizard wrote the config — fall through and start normally.
+		fmt.Println()
+	}
+
 	// NewWatcher loads the config and starts hot-reload in the background.
 	w, err := mapper.NewWatcher(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error loading config: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Tip: run 'keymaprd --dump' first to discover button numbers, then create %s\n", configPath)
+		fmt.Fprintf(os.Stderr, "error loading config: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "To get started, copy the example config:\n")
+		fmt.Fprintf(os.Stderr, "  mkdir -p ~/.config/keymaprd\n")
+		fmt.Fprintf(os.Stderr, "  cp /opt/homebrew/share/keymaprd/config.example.json ~/.config/keymaprd/config.json\n\n")
+		fmt.Fprintf(os.Stderr, "Or if installed from source:\n")
+		fmt.Fprintf(os.Stderr, "  cp config.example.json ~/.config/keymaprd/config.json\n\n")
+		fmt.Fprintf(os.Stderr, "Then run 'keymaprd --dump' to discover your button numbers.\n")
 		os.Exit(1)
 	}
 	defer w.Close()
@@ -171,5 +200,19 @@ func runStart(configPath string) {
 			fmt.Println("Shutting down.")
 			return
 		}
+	}
+}
+
+// runSetup launches the interactive TUI config wizard explicitly.
+// Users can re-run it at any time with: keymaprd setup
+func runSetup() {
+	result := setup.Run()
+	if !result.Saved {
+		fmt.Println("Setup cancelled — no changes made.")
+		return
+	}
+	fmt.Println("Config saved.")
+	if result.InstallDaemon {
+		runInstall()
 	}
 }

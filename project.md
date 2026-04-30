@@ -206,11 +206,33 @@ Concepts this project will teach, in order of encounter:
       — builds arm64 + amd64 binaries on every `v*.*.*` tag push
       — uploads to GitHub Release automatically
 
-### Sprint 3 — Advanced Mappings (Future)
-- [ ] HID++ 2.0 protocol parser for gesture/top buttons
+### Sprint 3 — Make User Friendly 
+- [x] Investigate the ways to make the installtion frictionless and impliment the quick wins
+      — `brew install choolake/tap/keymaprd` is now a single-line install
+      — wizard auto-launches on first run (no manual config copy)
+      — wizard done page offers Y/N to install as LaunchAgent (calls `keymaprd install`)
+      — `keymaprd setup` subcommand re-runs wizard at any time
+      — simplified brew caveats: just says "run keymaprd"
+- [x] Fun TUI config editor — `internal/setup/wizard.go` using `tview`
+      — launches automatically on first run when `~/.config/keymaprd/config.json` is missing
+      — Step 1: live button detection (press each button, they appear in the list)
+      — Step 2: per-button action picker (presets + custom shortcut input)
+      — Step 3: config preview → save to `~/.config/keymaprd/config.json`
+      — after wizard, keymaprd starts normally without restart needed
+- [x] bug: /opt/homebrew/share/keymaprd/config.example.json not available after brew install
+      — fixed formula: added `(share/"keymaprd").install "config.example.json"`
+
+### Sprint 4 — Advanced Mappings (Future)
+- [ ] **HID++ 2.0 protocol parser for gesture/top button (btn5)**
+      — btn5 is a Logitech proprietary gesture button, NOT a standard HID button
+      — it sends HID++ 2.0 feature reports, not `Button usage page (0x0009)` events
+      — neither CGEventTap nor IOHIDManager input callbacks can see it
+      — fix requires: open raw HID device, send `HIDPP_GET_FEATURE` requests,
+        enable `GestureButtonControl` feature (0x2150), parse incoming feature reports
+      — this is what LogiOps (Linux) and Options+ (macOS) do internally
 - [ ] Mouse event actions (not just keyboard)
 - [ ] App-specific profiles (different mappings per frontmost app)
-- [ ] GUI config editor (optional)
+
 
 
 
