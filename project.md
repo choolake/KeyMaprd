@@ -41,7 +41,7 @@ An open-source macOS tool that reads Logitech MX Master mouse buttons and remaps
   - Registers a session-level event tap with `kCGEventTapOptionListenOnly`
   - Observes `kCGEventOtherMouseDown/Up` for extra buttons (btn3+)
   - Uses a **Unix pipe** as a CGo callback → Go channel bridge
-  - Requires **Accessibility** permission only (no Input Monitoring needed)
+  - Requires **Accessibility** + **Input Monitoring** permissions (see macOS Permissions below)
   - Works with Bluetooth mice on all modern macOS versions ✅
 - **Frameworks:** `-framework CoreGraphics -framework CoreFoundation`
 
@@ -96,8 +96,9 @@ An open-source macOS tool that reads Logitech MX Master mouse buttons and remaps
   - Fix: detect navigation keys and OR in `flagNumPad` automatically before posting
 
 ### macOS Permissions
-- **Accessibility** — required for both CGEventTap (read) and CGEventPost (inject)
-- **Input Monitoring** — NOT required (CGEventTap with `ListenOnly` avoids this)
+- **Accessibility** — required for `CGEventTapCreate` to succeed and for `CGEventPost` to inject events
+- **Input Monitoring** — required by WindowServer to actually deliver tap events to the callback; without it the tap creates fine but callbacks never fire (critical when running as a LaunchAgent on macOS Ventura/Sonoma)
+  - Note: the `kCGEventTapOptionListenOnly` flag was expected to exempt us from Input Monitoring per Apple docs, but in practice macOS 13+ checks `kTCCServiceListenEvent` before delivering events to background agents regardless
 - Running the binary from a terminal: the terminal app also needs Accessibility permission
 - Binary must be codesigned with a stable identifier for TCC to track it:
   ```bash
