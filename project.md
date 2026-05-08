@@ -224,9 +224,9 @@ Concepts this project will teach, in order of encounter:
       — fixed formula: added `(share/"keymaprd").install "config.example.json"`
 
 ### Sprint 4 — Advanced Mappings (Future)
-- [ ] bug: In the config when you add mission control it appeard empty at the save -- I suspect it's same for others
-- [ ] When using config it just add only the required entries that remove the other example config in the exmaple and this remmves the ability for manualy edit the file
-- [ ] Permission check and prompt if not being granted. 
+- [ ] bug: In the setup when you add mission control it appeard empty at the save -- I suspect it's same for other named commands that supports for config
+- [ ] When using setup it just add only the required entries that remove the other example config in the exmaple and this remmves the ability for manualy edit the file
+- [ ] Permission check and prompt if not being granted. Evaluate options and impliment an one.
 - [ ] **HID++ 2.0 protocol parser for gesture/top button (btn5)**
       — btn5 is a Logitech proprietary gesture button, NOT a standard HID button
       — it sends HID++ 2.0 feature reports, not `Button usage page (0x0009)` events
@@ -234,9 +234,11 @@ Concepts this project will teach, in order of encounter:
       — fix requires: open raw HID device, send `HIDPP_GET_FEATURE` requests,
         enable `GestureButtonControl` feature (0x2150), parse incoming feature reports
       — this is what LogiOps (Linux) and Options+ (macOS) do internally
-- [ ] Mouse event actions (not just keyboard)
-- [ ] App-specific profiles (different mappings per frontmost app)
 
+
+### Sprint 5 — Nice to have Mappings (Future)
+- [ ] App-specific profiles (different mappings per frontmost app)
+- [ ] Mouse event actions (not just keyboard)
 
 
 
