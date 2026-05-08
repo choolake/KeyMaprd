@@ -2,6 +2,7 @@
 
 ## Project Reference
 Refer to `project.md` in the repository root as the **primary source of truth** for this project.
+Refer to `README.md` in the repository root as the **README** for this public project.
 It is a living document and is kept up to date with all architecture decisions, design choices,
 sprint progress, and implementation notes. Always read it before suggesting changes.
 
