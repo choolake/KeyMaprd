@@ -16,3 +16,6 @@
 
 # Go vendor directory (if used)
 vendor/
+
+#ignore research folder
+research/

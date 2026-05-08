@@ -9,6 +9,7 @@ sprint progress, and implementation notes. Always read it before suggesting chan
 
 ## Working Agreement
 - Before running any command, explain what it does and why, and wait for approval.
+- All the research outputs and input are in the research folder and should be updated as the project progresses.
 - This is a **learning project** in Go — prefer clear, idiomatic code over clever optimisations.
   Take the time to explain what and why, not just how.
 - Keep changes surgical — do not refactor unrelated code in the same change.
